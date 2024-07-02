@@ -1,0 +1,14 @@
+<?xml version="1" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW5A-25A" pn="GW5A-LV25MG121NC2/I1">gw5a25a-001</Device>
+    <FileList>
+        <File path="src/gowin_pll/gowin_pll.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/top.vhd" type="file.vhdl" enable="1"/>
+        <File path="C:/Users/Dominic/Documents/GitHub/matrix7219/library/mine/common.vhd" type="file.vhdl" enable="1"/>
+        <File path="C:/Users/Dominic/Documents/GitHub/matrix7219/src/matrix8x8.vhd" type="file.vhdl" enable="1"/>
+        <File path="src/primer25k_8digsin4.cst" type="file.cst" enable="1"/>
+    </FileList>
+</Project>
