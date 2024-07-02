@@ -9,19 +9,21 @@ use ieee.std_logic_misc.all;
 use std.textio.all;
 
 
-entity single8x8_tb is
+entity x4_8x8_tb is
 	generic (
 		runner_cfg : string
 		);
-end single8x8_tb;
+end x4_8x8_tb;
 
-architecture rtl of single8x8_tb is
+architecture rtl of x4_8x8_tb is
+
+	constant G_PANELS : positive := 4;
 
 	constant CLOCKSPEED : natural := 1000000;
 	constant CLOCKPER : time := 500000 us / CLOCKSPEED;
 	
 
-	type t_matrix is array(0 to 7) of std_logic_vector(7 downto 0);
+	type t_matrix is array(0 to 31) of std_logic_vector(7 downto 0);
 
 	constant c_test_data : t_matrix := (
 		"10101010",
@@ -31,7 +33,35 @@ architecture rtl of single8x8_tb is
 		"10100101",
 		"01011010",
 		"11110000",
-		"00001111"
+		"00001111",
+
+		"00110110",
+		"01111111",
+		"01111111",
+		"00111110",
+		"00111110",
+		"00011100",
+		"00011100",
+		"00001000",
+
+		"10000001",
+		"01000010",
+		"00100100",
+		"00011000",
+		"00011000",
+		"00100100",
+		"01000010",
+		"10000001",
+
+		"01010101",
+		"01010101",
+		"01010101",
+		"01010101",
+		"01010101",
+		"01010101",
+		"01010101",
+		"01010101"
+
 		);
 
 	signal i_rst			: std_logic;
@@ -44,7 +74,7 @@ architecture rtl of single8x8_tb is
 	signal i_scan_ack		: std_logic;			-- flip to match scan_tgl_i when scan started
 
 	-- data memory interface
-	signal i_dispdata_A		: std_logic_vector(2 downto 0);
+	signal i_dispdata_A		: std_logic_vector(4 downto 0);
 	signal i_dispdata_D		: std_logic_vector(7 downto 0);
 
 	-- 7219 interface
@@ -91,6 +121,9 @@ begin
 	end process;
 
 	e_dut:entity work.matrix8x8
+	generic map (
+		G_PANELS => G_PANELS
+	)
 	port map( 
 		rst_i => i_rst,
 		clk_i => i_clk,
@@ -109,7 +142,7 @@ begin
 
 	
 	p_monitor_ser:process(i_mx_cs, i_mx_clk)
-	variable sr : std_logic_vector(15 downto 0) := (others => 'X');
+	variable sr : std_logic_vector(16*G_PANELS-1 downto 0) := (others => 'X');
 	begin
 
 		if rising_edge(i_mx_cs) then
@@ -118,7 +151,7 @@ begin
 		end if;
 
 		if rising_edge(i_mx_clk) then
-			sr := sr(14 downto 0) & i_mx_d;
+			sr := sr(sr'high-1 downto 0) & i_mx_d;
 		end if;
 		
 	end process;

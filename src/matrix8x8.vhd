@@ -3,8 +3,12 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.std_logic_misc.all;
 
+use work.common.all;
 
 entity matrix8x8 is
+	generic (
+		G_PANELS : positive := 1
+	);
 	port(
 
 		rst_i			: in	std_logic;
@@ -17,7 +21,7 @@ entity matrix8x8 is
 		scan_ack_o		: out	std_logic;			-- flip to match scan_tgl_i when scan started
 
 		-- data memory interface
-		A_o				: out	std_logic_vector(2 downto 0);
+		A_o				: out	std_logic_vector(numbits(G_PANELS*8)-1 downto 0);
 		D_i				: in	std_logic_vector(7 downto 0);
 
 		-- 7219 interface
@@ -29,28 +33,35 @@ end matrix8x8;
 
 architecture rtl of matrix8x8 is
 
-	type t_state is (reset, init_dec, init_int, init_scn, init_shu, idle, scan);
+	type t_state is (reset, init_dec, init_int, init_scn, init_shu, init_fin, idle, scan_start, scan);
 	signal r_state : t_state;
 
 	signal r_out_sr	: std_logic_vector(15 downto 0);
-	signal r_out_cs	: std_logic_vector(16 downto 0);
+	signal r_out_cs	: std_logic_vector(16*G_PANELS downto 0);
 
 	signal r_scan_ack	: std_logic;
 	signal r_scan_req	: std_logic;
 
 	signal r_scan_ix	: unsigned(3 downto 0);	
 
+	signal r_scan_pnl	: unsigned(numbits(G_PANELS) downto 0); -- 1 extra bit for wrap round
+
 	signal r_ck_out		: std_logic;
+	signal r_ring_ld	: std_logic_vector(15 downto 0) := (0 => '1', others => '0');
 
 begin
 	
 	clk_o <= r_ck_out;
 
-	A_o <= std_logic_vector(r_scan_ix(2 downto 0));
+	G_PNL1:if G_PANELS = 1 generate
+		A_o <= std_logic_vector(r_scan_ix(2 downto 0));
+	end generate;
+	G_PNLX:if G_PANELS > 1 generate
+		A_o <= std_logic_vector(r_scan_pnl(r_scan_pnl'high-1 downto 0) & r_scan_ix(2 downto 0));
+	end generate;
 	scan_ack_o <= r_scan_ack;
 
 	p_state:process(rst_i, scan_tgl_i, clk_i)
-	variable v_scan_ix_next : unsigned(3 downto 0);
 	begin
 		if rst_i = '1' then
 			r_state <= reset;
@@ -59,11 +70,11 @@ begin
 			r_scan_ack <= '0';
 			r_scan_req <= '0';
 			r_ck_out <= '0';
+			r_scan_ix <= (others=> '0');
+			r_scan_pnl <= (others => '0');
+			r_ring_ld  <= (0 => '1', others => '0');
 		elsif rising_edge(clk_i) then
 		 	if clken_i = '1' then
-
-				v_scan_ix_next := r_scan_ix + 1;
-
 				if r_ck_out = '0' then
 					-- falling edge of ck_out
 					case r_state is
@@ -87,23 +98,42 @@ begin
 							if r_out_cs(r_out_cs'high) = '1' then
 								r_out_cs <= (others => '0');
 								r_out_sr <= x"0C01";		-- leave shutdown
+								r_state <= init_fin;
+							end if;
+						when init_fin =>
+							if r_out_cs(r_out_cs'high) = '1' then
 								r_state <= idle;
 							end if;
 						when idle =>
-							if r_out_cs(r_out_cs'high) = '1' and scan_tgl_i /= r_scan_ack then
-								r_scan_ix <= to_unsigned(0, r_scan_ix'length);
-								r_state <= scan;
+							if scan_tgl_i /= r_scan_ack then
+								r_scan_ix <= (others => '0');
+								r_scan_pnl <= (others => '0');
 								r_scan_req <= scan_tgl_i;
+								r_state <= scan_start;
+							end if;
+						when scan_start =>
+							r_out_cs <= (others => '0');
+							r_out_sr <= "0000" & std_logic_vector(r_scan_ix+1) & D_i;
+							r_state <= scan;
+							r_ring_ld  <= (0 => '1', others => '0');
+							if G_PANELS > 1 then
+								r_scan_pnl <= r_scan_pnl + 1;
 							end if;
 						when scan =>
 							if r_out_cs(r_out_cs'high) = '1' then 
-								if v_scan_ix_next = "1001" then
+								if r_scan_ix + 1 = to_unsigned(8, r_scan_ix'length) then
 									r_state <= idle;
 									r_scan_ack <= r_scan_req;
+									r_out_sr <= (others => '0');
 								else
-									r_out_cs <= (others => '0');
-									r_out_sr <= "0000" & std_logic_vector(v_scan_ix_next) & D_i;
-									r_scan_ix <= v_scan_ix_next;
+									r_scan_ix <= r_scan_ix + 1;
+									r_state <= scan_start;
+									r_scan_pnl <= (others => '0');
+								end if;
+							elsif r_ring_ld(0) = '1' then
+								r_out_sr <= "0000" & std_logic_vector(r_scan_ix+1) & D_i;
+								if G_PANELS > 1 then
+									r_scan_pnl <= r_scan_pnl + 1;
 								end if;
 							end if;
 						when others =>
@@ -116,7 +146,8 @@ begin
 					d_o <= r_out_sr(r_out_sr'high);
 					cs_o <= r_out_cs(r_out_cs'high-1);
 					r_out_cs <= r_out_cs(r_out_cs'high-1 downto 0) & '1';
-					r_out_sr <= r_out_sr(r_out_sr'high-1 downto 0) & '0';
+					r_out_sr <= r_out_sr(r_out_sr'high-1 downto 0) & r_out_sr(r_out_sr'high);
+					r_ring_ld <= r_ring_ld(0) & r_ring_ld(r_ring_ld'high downto 1);
 				end if;
 			end if;
 		end if;
